@@ -1,6 +1,7 @@
 #include "global.h"
 
 #include "led_blinky.h"
+#include "neo_blinky.h"
 
 void setup() {
   // put your setup code here, to run once:
@@ -8,6 +9,7 @@ void setup() {
   // check_info_File(0);
 
   xTaskCreate(led_blinky, "Task LED Blink", 2048, NULL, 2, NULL);
+  xTaskCreate(neo_blinky, "Task NEO Blink", 2048, NULL, 2, NULL);
 }
 
 void loop() {
