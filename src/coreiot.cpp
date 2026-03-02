@@ -1,10 +1,19 @@
 #include "coreiot.h"
+#include <Adafruit_NeoPixel.h>
+#include "led_blinky.h"
 
 // ----------- CONFIGURE THESE! -----------
 const char* coreIOT_Server = "app.coreiot.io";  
-const char* coreIOT_Token = "g7drm1amhd3dchr379xu";   // Device Access Token
+const char* coreIOT_Token = "t1hr1cgg3upha69llywm";   // Device Access Token
+const char* coreIOT_User = "device_1";   // Device Access Token
+const char* coreIOT_Pass = "Ngoc";   // Device Access Token
 const int   mqttPort = 1883;
 // ----------------------------------------
+
+// NeoPixel setup
+#define NEO_PIN 45
+#define LED_COUNT 1
+Adafruit_NeoPixel strip(LED_COUNT, NEO_PIN, NEO_GRB + NEO_KHZ800);
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -12,23 +21,30 @@ PubSubClient client(espClient);
 
 void reconnect() {
   // Loop until we're reconnected
+  int retry_count = 0;
   while (!client.connected()) {
-    Serial.print("Attempting MQTT connection...");
-    // Attempt to connect (username=token, password=empty)
-    //if (client.connect("ESP32Client", coreIOT_Token, NULL)) {
-    String clientId = "ESP32Client-";
-    clientId += String(random(0xffff), HEX);
-
-    if (client.connect(clientId.c_str())) {
-        
-      Serial.println("connected to CoreIOT Server!");
-      client.subscribe("v1/devices/me/rpc/request/+");
-      Serial.println("Subscribed to v1/devices/me/rpc/request/+");
-
+    retry_count++;
+    Serial.print("Attempting MQTT connection #");
+    Serial.print(retry_count);
+    Serial.print(" to ");
+    Serial.println(CORE_IOT_SERVER);
+    
+    // Attempt to connect using Device Token
+    // CoreIOT expects: username=device_token, password=empty
+    if (client.connect("esp32_device", coreIOT_Token, "")) {
+        Serial.println("connected to CoreIOT Server!");
+        client.subscribe("v1/devices/me/rpc/request/+");
+        Serial.println("Subscribed to v1/devices/me/rpc/request/+");
     } else {
       Serial.print("failed, rc=");
       Serial.print(client.state());
       Serial.println(" try again in 5 seconds");
+      
+      // Check WiFi connection
+      if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("ERROR: WiFi disconnected! Check your WiFi connection.");
+      }
+      
       delay(5000);
     }
   }
@@ -58,19 +74,73 @@ void callback(char* topic, byte* payload, unsigned int length) {
   }
 
   const char* method = doc["method"];
-  if (strcmp(method, "setStateLED") == 0) {
+  if (strcmp(method, "setValueNEO") == 0) {
     // Check params type (could be boolean, int, or string according to your RPC)
-    // Example: {"method": "setValueLED", "params": "ON"}
-    const char* params = doc["params"];
+    bool neoState = false;
+    
+    // Handle different param types
+    if (doc["params"].is<bool>()) {
+      // If params is boolean
+      neoState = doc["params"].as<bool>();
+      Serial.print("Params (boolean): ");
+      Serial.println(neoState ? "true" : "false");
+    } else if (doc["params"].is<const char*>()) {
+      // If params is string
+      const char* params = doc["params"];
+      if (strcmp(params, "ON") == 0 || strcmp(params, "on") == 0 || strcmp(params, "true") == 0) {
+        neoState = true;
+      }
+      Serial.print("Params (string): ");
+      Serial.println(params);
+    } else if (doc["params"].is<int>()) {
+      // If params is number
+      neoState = (doc["params"].as<int>() != 0);
+      Serial.print("Params (number): ");
+      Serial.println(doc["params"].as<int>());
+    }
 
-    if (strcmp(params, "ON") == 0) {
+    if (neoState) {
       Serial.println("Device turned ON.");
-      //TODO
-
-    } else {   
+      isNeoBlinkEnabled = true;
+      xSemaphoreGive(xBinarySemaphoreNeoBlink);
+      Serial.println("Neo blink semaphore set to true.");
+    } else {
       Serial.println("Device turned OFF.");
-      //TODO
+      isNeoBlinkEnabled = false;
+      xSemaphoreTake(xBinarySemaphoreNeoBlink, 0);
+      Serial.println("Neo blink semaphore set to false.");
+    }
+  } else if (strcmp(method, "setValueLED") == 0) {
+    bool ledState = false;
 
+    if (doc["params"].is<bool>()) {
+      ledState = doc["params"].as<bool>();
+      Serial.print("LED params (boolean): ");
+      Serial.println(ledState ? "true" : "false");
+    } else if (doc["params"].is<const char*>()) {
+      const char* params = doc["params"];
+      if (strcmp(params, "ON") == 0 || strcmp(params, "on") == 0 || strcmp(params, "true") == 0) {
+        ledState = true;
+      }
+      Serial.print("LED params (string): ");
+      Serial.println(params);
+    } else if (doc["params"].is<int>()) {
+      ledState = (doc["params"].as<int>() != 0);
+      Serial.print("LED params (number): ");
+      Serial.println(doc["params"].as<int>());
+    }
+
+    if (ledState) {
+      Serial.println("LED blink turned ON.");
+      isLedBlinkEnabled = true;
+      xSemaphoreGive(xBinarySemaphoreLedBlink);
+      Serial.println("LED blink semaphore set to true.");
+    } else {
+      Serial.println("LED blink turned OFF.");
+      isLedBlinkEnabled = false;
+      xSemaphoreTake(xBinarySemaphoreLedBlink, 0);
+      digitalWrite(LED_GPIO, LOW);
+      Serial.println("LED blink semaphore set to false.");
     }
   } else {
     Serial.print("Unknown method: ");
@@ -80,6 +150,12 @@ void callback(char* topic, byte* payload, unsigned int length) {
 
 
 void setup_coreiot(){
+
+  // Initialize NeoPixel
+  strip.begin();
+  strip.clear();
+  strip.show();
+  Serial.println("NeoPixel initialized");
 
   //Serial.print("Connecting to WiFi...");
   //WiFi.begin(wifi_ssid, wifi_password);
@@ -98,9 +174,14 @@ void setup_coreiot(){
     Serial.print(".");
   }
 
+  // Add delay to ensure DNS is ready after WiFi connection
+  delay(2000);
+  Serial.println("setup_coreiot Connected!");
 
-  Serial.println(" Connected!");
-
+  // Initialize MQTT server address and port
+  CORE_IOT_SERVER = coreIOT_Server;
+  CORE_IOT_PORT = "1883";
+  
   client.setServer(CORE_IOT_SERVER.c_str(), CORE_IOT_PORT.toInt());
   client.setCallback(callback);
 

@@ -1,4 +1,5 @@
 #include "neo_blinky.h"
+#include "global.h"
 
 
 void neo_blinky(void *pvParameters){
@@ -9,12 +10,27 @@ void neo_blinky(void *pvParameters){
     strip.clear();
     strip.show();
 
-    while(1) {                          
+    while(1) {
+        if (!isNeoBlinkEnabled) {
+            strip.setPixelColor(0, strip.Color(0, 0, 0));
+            strip.show();
+            xSemaphoreTake(xBinarySemaphoreNeoBlink, portMAX_DELAY);
+            if (!isNeoBlinkEnabled) {
+                continue;
+            }
+        }
+
         strip.setPixelColor(0, strip.Color(255, 0, 0)); // Set pixel 0 to red
         strip.show(); // Update the strip
 
         // Wait for 500 milliseconds
         vTaskDelay(500);
+
+        if (!isNeoBlinkEnabled) {
+            strip.setPixelColor(0, strip.Color(0, 0, 0));
+            strip.show();
+            continue;
+        }
 
         // Set the pixel to off
         strip.setPixelColor(0, strip.Color(0, 0, 0)); // Turn pixel 0 off
@@ -22,5 +38,6 @@ void neo_blinky(void *pvParameters){
 
         // Wait for another 500 milliseconds
         vTaskDelay(500);
+        // Serial.println("neo_blinky");
     }
 }

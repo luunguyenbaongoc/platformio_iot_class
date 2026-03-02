@@ -14,3 +14,7 @@ String wifi_ssid = "abcde";
 String wifi_password = "123456789";
 boolean isWifiConnected = false;
 SemaphoreHandle_t xBinarySemaphoreInternet = xSemaphoreCreateBinary();
+SemaphoreHandle_t xBinarySemaphoreNeoBlink = xSemaphoreCreateBinary();
+SemaphoreHandle_t xBinarySemaphoreLedBlink = xSemaphoreCreateBinary();
+volatile bool isNeoBlinkEnabled = false;
+volatile bool isLedBlinkEnabled = false;
