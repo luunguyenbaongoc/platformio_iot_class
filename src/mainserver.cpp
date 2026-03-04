@@ -120,9 +120,9 @@ String mainPage()
       </div>
 
       <div>
-        <button onclick='toggleLED(1)'>💡 LED1: <span id="l1">)rawliteral" +
+        <button onclick='toggleLED(1)'>💡 LED: <span id="led">)rawliteral" +
          led1 + R"rawliteral(</span></button>
-        <button onclick='toggleLED(2)'>💡 LED2: <span id="l2">)rawliteral" +
+        <button onclick='toggleNEO(1)'>💡 NEO: <span id="neo">)rawliteral" +
          led2 + R"rawliteral(</span></button>
       </div>
 
@@ -131,11 +131,18 @@ String mainPage()
 
     <script>
       function toggleLED(id) {
-        fetch('/toggle?led='+id)
+        fetch('/toggleled?led='+id)
           .then(response=>response.json())
           .then(json=>{
-            document.getElementById('l1').innerText=json.led1;
-            document.getElementById('l2').innerText=json.led2;
+            document.getElementById('led').innerText=json.led;
+          });
+      }
+
+      function toggleNEO(id) {
+        fetch('/toggleneo?neo='+id)
+          .then(response=>response.json())
+          .then(json=>{
+            document.getElementById('neo').innerText=json.neo;
           });
       }
 
@@ -282,22 +289,55 @@ String settingsPage()
 // ========== Handlers ==========
 void handleRoot() { server.send(200, "text/html", mainPage()); }
 
-void handleToggle()
+void handleLEDToggle()
 {
   int led = server.arg("led").toInt();
   if (led == 1)
   {
     led1_state = !led1_state;
-    Serial.println("YOUR CODE TO CONTROL LED1");
-  }
-  else if (led == 2)
-  {
-    led2_state = !led2_state;
-    Serial.println("YOUR CODE TO CONTROL LED2");
+    if (led1_state)
+    {
+      Serial.println("LED blink turned ON (Web).");
+      isLedBlinkEnabled = true;
+      xSemaphoreGive(xBinarySemaphoreLedBlink);
+      Serial.println("LED blink semaphore set to true.");
+    }
+    else
+    {
+      Serial.println("LED blink turned OFF (Web).");
+      isLedBlinkEnabled = false;
+      xSemaphoreTake(xBinarySemaphoreLedBlink, 0);
+      digitalWrite(LED1_PIN, LOW);
+      Serial.println("LED blink semaphore set to false.");
+    }
   }
   server.send(200, "application/json",
-              "{\"led1\":\"" + String(led1_state ? "ON" : "OFF") +
-                  "\",\"led2\":\"" + String(led2_state ? "ON" : "OFF") + "\"}");
+              "{\"led\":\"" + String(led1_state ? "ON" : "OFF") + "\"}");
+}
+
+void handleNEOToggle()
+{
+  int neo = server.arg("neo").toInt();
+  if (neo == 1)
+  {
+    led2_state = !led2_state;
+    if (led2_state)
+    {
+      Serial.println("NEO blink turned ON (Web).");
+      isNeoBlinkEnabled = true;
+      xSemaphoreGive(xBinarySemaphoreNeoBlink);
+      Serial.println("Neo blink semaphore set to true.");
+    }
+    else
+    {
+      Serial.println("NEO blink turned OFF (Web).");
+      isNeoBlinkEnabled = false;
+      xSemaphoreTake(xBinarySemaphoreNeoBlink, 0);
+      Serial.println("Neo blink semaphore set to false.");
+    }
+  }
+  server.send(200, "application/json",
+              "{\"neo\":\"" + String(led2_state ? "ON" : "OFF") + "\"}");
 }
 
 void handleSensors()
@@ -325,7 +365,8 @@ void handleConnect()
 void setupServer()
 {
   server.on("/", HTTP_GET, handleRoot);
-  server.on("/toggle", HTTP_GET, handleToggle);
+  server.on("/toggleled", HTTP_GET, handleLEDToggle);
+  server.on("/toggleneo", HTTP_GET, handleNEOToggle);
   server.on("/sensors", HTTP_GET, handleSensors);
   server.on("/settings", HTTP_GET, handleSettings);
   server.on("/connect", HTTP_GET, handleConnect);
